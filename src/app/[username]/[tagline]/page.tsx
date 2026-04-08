@@ -1,44 +1,48 @@
+import {
+  canonicalRiotTag,
+  getTftMatchRoutingForTag,
+} from "@/data/riot-platforms";
+import { getAccountByPUUID, getMatchIdByPUUID, getMatchbyMatchId } from "@/lib/riot";
+import { normalizeRiotGameName } from "@/lib/riot-id";
+import { decodePathSegment } from "@/lib/route-params";
+
 export default async function Page({
   params,
 }: {
   params: Promise<{ username: string; tagline: string }>;
 }) {
   const { username, tagline } = await params;
+  const gameName = normalizeRiotGameName(decodePathSegment(username));
+  const tag = canonicalRiotTag(decodePathSegment(tagline));
+  const tftMatchRouting = getTftMatchRoutingForTag(tag);
 
-  const apiKey = process.env.RIOT_API_KEY;
-  if (!apiKey) {
+  try {
+    const account = await getAccountByPUUID(gameName, tag);
+    const matchIds = await getMatchIdByPUUID(account.puuid, tftMatchRouting);
+    const latestMatchId = matchIds[0] ?? null;
+    const matchData = latestMatchId
+      ? await getMatchbyMatchId(latestMatchId, tftMatchRouting)
+      : null;
+
     return (
-      <div>
-        Missing <code className="font-mono">RIOT_API_KEY</code> in environment.
+      <div className="space-y-2 p-6">
+        <p className="text-2xl font-bold">
+          Riot ID: {account.gameName}#{account.tagLine}
+        </p>
+        <pre className="overflow-auto rounded-md bg-zinc-100 p-4 text-sm dark:bg-zinc-900">
+          {JSON.stringify(account, null, 2)}
+        </pre>
+        <pre className="overflow-auto rounded-md bg-zinc-100 p-4 text-sm dark:bg-zinc-900">
+          {JSON.stringify({ matchIds, latestMatchId }, null, 2)}
+        </pre>
+      </div>
+    );
+  } catch (error) {
+    return (
+      <div className="p-6">
+        Failed to fetch account data:{" "}
+        {error instanceof Error ? error.message : "Unknown error"}
       </div>
     );
   }
-
-  const res = await fetch(
-    `https://americas.api.riotgames.com/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(username)}/${encodeURIComponent(tagline)}`,
-    {
-      headers: {
-        "X-Riot-Token": apiKey,
-      },
-      cache: "no-store",
-    }
-  );
-
-  if (!res.ok) {
-    return (
-      <div>
-        Failed to fetch account data: {res.statusText}
-      </div>
-    );
-  }
-
-  const data = await res.json();
-
-  return (
-    <div className="text-2xl font-bold">username: {username}
-      <pre className="overflow-auto rounded-md bg-zinc-100 p-4 text-sm dark:bg-zinc-900">
-        {JSON.stringify(data, null, 2)}
-      </pre>
-    </div>
-  );
 }
